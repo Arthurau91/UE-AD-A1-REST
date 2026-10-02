@@ -36,21 +36,14 @@ class MovieInput(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
 
     title: str = Field(max_length=100)
-    year: int = Field(ge=1888)
+    rating: int = Field(ge=0, le=10)
     director: str = Field(max_length=100)
-
-    @field_validator("year")
-    @classmethod
-    def year_not_too_far_in_future(cls, v: int) -> int:
-        if v > datetime.now().year + 1:
-            raise ValueError("Invalid year")
-        return v
 
 
 class MovieResponse(BaseModel):
     id: str
     title: str
-    year: int
+    rating: int
     director: str
 
 
