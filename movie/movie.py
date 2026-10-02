@@ -61,8 +61,12 @@ def validate_payload(model: Type[T], payload: Any) -> T:
         raise UnprocessableEntity(description=loads(exc.json())) from exc
 
 
-@app.errorhandler(NotFound)
-def handle_movie_not_found(_):
+class MovieNotFoundError(NotFound):
+    pass
+
+
+@app.errorhandler(MovieNotFoundError)
+def handle_movie_not_found(e: MovieNotFoundError):
     return jsonify(error="Movie does not exist"), 404
 
 
@@ -75,13 +79,13 @@ def find_movie(movieid: str) -> int:
     for i, movie in enumerate(movies):
         if str(movie["id"]) == str(movieid):
             return movies[i]
-    raise NotFound()
+    raise MovieNotFoundError()
 
 def find_movie_index(movieid: str) -> int:
     for i, movie in enumerate(movies):
         if str(movie["id"]) == str(movieid):
             return i
-    raise NotFound()
+    raise MovieNotFoundError()
 
 
 @app.route("/movies", methods=["GET"])
