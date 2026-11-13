@@ -1,0 +1,447 @@
+openapi: 3.0.3
+info:
+  title: Booking API
+  version: 1.0.0
+  description: |
+    REST API for reading, creating, and deleting cinema bookings.
+
+    Booking data is stored in the service's JSON file. Each entry belongs to a
+    user (`userid`) and holds a list of booked dates, each with the list of
+    movie IDs booked on that date. A booking is identified by the pair
+    `userid` / `date`, so the API exposes no update operation: to change a
+    booking, delete it and create it again.
+
+    Creating a booking checks the showtime with the Schedule service, and the
+    per-date detail endpoint enriches the booked movies with their details from
+    the Movie service.
+servers:
+  - url: http://localhost:3201/
+tags:
+  - name: Bookings
+    description: Operations for booking resources
+paths:
+  /bookings/{userid}:
+    parameters:
+      - $ref: "#/components/parameters/UserId"
+    get:
+      tags:
+        - Bookings
+      operationId: getUserBookings
+      summary: Get a user's bookings
+      description: |
+        Returns the booking document of a single user, containing the list of
+        booked dates. There is no endpoint returning every user's bookings, as
+        that would require an administrator role. The stored record is returned
+        as-is.
+      responses:
+        "200":
+          description: Bookings returned successfully.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Booking"
+              examples:
+                default:
+                  value:
+                    userid: chris_rivers
+                    dates:
+                      - date: "20151201"
+                        movies:
+                          - "267eedb8-0f5d-42d5-8f43-72426b9fb3e6"
+        "404":
+          $ref: "#/components/responses/UserNotFound"
+        "405":
+          $ref: "#/components/responses/MethodNotAllowed"
+        "500":
+          $ref: "#/components/responses/UnexpectedServerError"
+    post:
+      tags:
+        - Bookings
+      operationId: createBooking
+      summary: Create a booking for a user
+      description: |
+        Validates the payload, verifies with the Schedule service that the date
+        exists and that every requested movie is scheduled on that date, then
+        adds the booking to the user's document (creating the user entry if it
+        does not exist yet). Unknown properties are rejected. A user can have at
+        most one booking per date, so booking an already booked date returns
+        `409`. A date that is not scheduled, or a movie not scheduled on that
+        date, returns `422`. An unreachable Schedule service returns `502`.
+      requestBody:
+        required: true
+        description: Date and movies to book for the user.
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BookingInput"
+      responses:
+        "201":
+          description: Booking created.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Booking"
+              examples:
+                default:
+                  value:
+                    userid: chris_rivers
+                    dates:
+                      - date: "20151201"
+                        movies:
+                          - "267eedb8-0f5d-42d5-8f43-72426b9fb3e6"
+                      - date: "20151203"
+                        movies:
+                          - "720d006c-3a57-4b6a-b18f-9b713b073f3c"
+        "400":
+          $ref: "#/components/responses/InvalidJson"
+        "405":
+          $ref: "#/components/responses/MethodNotAllowed"
+        "409":
+          $ref: "#/components/responses/BookingConflict"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "422":
+          $ref: "#/components/responses/InvalidBooking"
+        "502":
+          $ref: "#/components/responses/UpstreamUnavailable"
+        "500":
+          $ref: "#/components/responses/UnexpectedServerError"
+  /bookings/{userid}/{date}:
+    parameters:
+      - $ref: "#/components/parameters/UserId"
+      - $ref: "#/components/parameters/Date"
+    get:
+      tags:
+        - Bookings
+      operationId: getBookingDetails
+      summary: Get a booking with movie details
+      description: |
+        Returns the booking of a user for a single date, enriched with the
+        details of each booked movie fetched from the Movie service. When a
+        movie cannot be found in the Movie service, its raw ID is returned
+        instead of the full record. An unreachable Movie service returns `502`.
+      responses:
+        "200":
+          description: Booking details returned successfully.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BookingDetails"
+              examples:
+                default:
+                  value:
+                    userid: chris_rivers
+                    date: "20151201"
+                    movies:
+                      - id: "267eedb8-0f5d-42d5-8f43-72426b9fb3e6"
+                        title: Creed
+                        rating: 8.8
+                        director: Ryan Coogler
+        "404":
+          $ref: "#/components/responses/BookingNotFound"
+        "405":
+          $ref: "#/components/responses/MethodNotAllowed"
+        "502":
+          $ref: "#/components/responses/UpstreamUnavailable"
+        "500":
+          $ref: "#/components/responses/UnexpectedServerError"
+    delete:
+      tags:
+        - Bookings
+      operationId: deleteBooking
+      summary: Delete a booking
+      description: |
+        Removes the booking for the given user and date. A successful deletion
+        has no response body. The date entry is removed from the user's document;
+        the user document itself is kept.
+      responses:
+        "204":
+          description: Booking deleted; response body is empty.
+        "404":
+          $ref: "#/components/responses/BookingNotFound"
+        "405":
+          $ref: "#/components/responses/MethodNotAllowed"
+        "500":
+          $ref: "#/components/responses/UnexpectedServerError"
+components:
+  parameters:
+    UserId:
+      name: userid
+      in: path
+      required: true
+      description: Identifier of the user whose bookings are addressed.
+      schema:
+        type: string
+        example: chris_rivers
+    Date:
+      name: date
+      in: path
+      required: true
+      description: Booked show date string in `YYYYMMDD` format.
+      schema:
+        type: string
+        pattern: "^\\d{8}$"
+        example: "20151201"
+  schemas:
+    BookingInput:
+      type: object
+      description: |
+        Strict request body accepted by create. Both properties are required,
+        `movies` must contain at least one ID, and additional properties are
+        rejected.
+      additionalProperties: false
+      required:
+        - date
+        - movies
+      properties:
+        date:
+          type: string
+          pattern: "^\\d{8}$"
+          description: Booked show date as an eight digit string in `YYYYMMDD` format.
+          example: "20151203"
+        movies:
+          type: array
+          minItems: 1
+          description: IDs of the movies to book on that date.
+          items:
+            type: string
+          example:
+            - "720d006c-3a57-4b6a-b18f-9b713b073f3c"
+    DateBooking:
+      type: object
+      description: A single booked date with the list of booked movie IDs.
+      required:
+        - date
+        - movies
+      properties:
+        date:
+          type: string
+          example: "20151201"
+        movies:
+          type: array
+          items:
+            type: string
+          example:
+            - "267eedb8-0f5d-42d5-8f43-72426b9fb3e6"
+    Booking:
+      type: object
+      description: Booking document of a single user.
+      required:
+        - userid
+        - dates
+      properties:
+        userid:
+          type: string
+          example: chris_rivers
+        dates:
+          type: array
+          items:
+            $ref: "#/components/schemas/DateBooking"
+    BookingDetails:
+      type: object
+      description: |
+        Booking of a single user for a single date, enriched with the details of
+        the booked movies.
+      required:
+        - userid
+        - date
+        - movies
+      properties:
+        userid:
+          type: string
+          example: chris_rivers
+        date:
+          type: string
+          example: "20151201"
+        movies:
+          type: array
+          description: |
+            Booked movies. Each item is either a full Movie record or, when the
+            movie could not be found, an object containing only its `id`.
+          items:
+            $ref: "#/components/schemas/MovieDetail"
+    MovieDetail:
+      type: object
+      description: |
+        A movie booked on a date. Contains the Movie service record when it is
+        available, otherwise only the `id`.
+      required:
+        - id
+      additionalProperties: true
+      properties:
+        id:
+          type: string
+          example: "267eedb8-0f5d-42d5-8f43-72426b9fb3e6"
+        title:
+          type: string
+          example: Creed
+        rating:
+          type: number
+          example: 8.8
+        director:
+          type: string
+          example: Ryan Coogler
+    Error:
+      type: object
+      required:
+        - error
+      properties:
+        error:
+          description: |
+            Human-readable HTTP error or Pydantic validation details. Either a
+            string (HTTP errors) or an array of ValidationIssue objects
+            (validation errors).
+          oneOf:
+            - type: string
+            - type: array
+              items:
+                $ref: "#/components/schemas/ValidationIssue"
+          example: Booking does not exist
+    ValidationIssue:
+      type: object
+      required:
+        - type
+        - loc
+        - msg
+        - input
+      additionalProperties: true
+      properties:
+        type:
+          type: string
+          description: Pydantic validation error type.
+          example: missing
+        loc:
+          type: array
+          description: >-
+            Location of the invalid or missing value in the request. Items are
+            strings or integers.
+          items:
+            oneOf:
+              - type: string
+              - type: integer
+          example:
+            - movies
+        msg:
+          type: string
+          description: Explanation of the validation failure.
+          example: Field required
+        input:
+          description: Rejected value, when one was supplied.
+        ctx:
+          type: object
+          description: Optional additional context from Pydantic.
+          additionalProperties: true
+  responses:
+    UserNotFound:
+      description: No booking document exists for the supplied user. HTTP 404.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          examples:
+            default:
+              value:
+                error: Booking does not exist
+    BookingNotFound:
+      description: |
+        The user is unknown (`Booking does not exist`) or the user has no booking
+        for the supplied date (`No booking for this date`). HTTP 404.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          examples:
+            unknownDate:
+              value:
+                error: No booking for this date
+            unknownUser:
+              value:
+                error: Booking does not exist
+    BookingConflict:
+      description: The user already has a booking for the supplied date. HTTP 409.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          examples:
+            default:
+              value:
+                error: Booking already exists for this date
+    InvalidJson:
+      description: Request body is empty or is not valid JSON.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          examples:
+            default:
+              value:
+                error: The browser (or proxy) sent a request that this server could not understand.
+    UnsupportedMediaType:
+      description: Request body is not sent with the application/json media type.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          examples:
+            default:
+              value:
+                error: The browser (or proxy) sent a request that this server could not understand.
+    InvalidBooking:
+      description: |
+        HTTP 422. Either the payload did not satisfy BookingInput (the error is
+        an array of Pydantic validation details), or the booking was rejected by
+        the Schedule check (the error is a string such as `Date is not
+        scheduled` or `Movie <id> is not scheduled on <date>`).
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          examples:
+            validation:
+              value:
+                error:
+                  - type: missing
+                    loc:
+                      - movies
+                    msg: Field required
+                    input:
+                      date: "20151203"
+            notScheduled:
+              value:
+                error: Movie 720d006c-3a57-4b6a-b18f-9b713b073f3c is not scheduled on 20151203
+    UpstreamUnavailable:
+      description: |
+        An upstream service (Schedule or Movie) could not be reached or returned
+        an unexpected response. HTTP 502.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          examples:
+            default:
+              value:
+                error: An upstream service is unavailable
+    MethodNotAllowed:
+      description: The HTTP method is not supported for this path.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          examples:
+            default:
+              value:
+                error: The method is not allowed for the requested URL.
+    UnexpectedServerError:
+      description: |
+        Unexpected server-side failure, for example an error reading or
+        writing the JSON data file. Unhandled exceptions are processed by
+        Flask; their response representation may not follow the Error schema.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+
+
+
+
