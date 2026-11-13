@@ -1,0 +1,382 @@
+openapi: 3.0.3
+info:
+  title: Schedule API
+  version: 1.0.0
+  description: |
+    REST API for listing, retrieving, creating, and deleting cinema showtimes.
+
+    Schedule data is stored in the service's JSON file. Each entry is a show date
+    (formatted `YYYYMMDD`) together with the list of movie IDs available on that
+    date. The date is the unique identifier of an entry, so the API exposes no
+    update operation: to change a date, delete it and create it again.
+servers:
+  - url: http://localhost:3202/
+tags:
+  - name: Schedule
+    description: Operations for showtime resources
+paths:
+  /schedule:
+    get:
+      tags:
+        - Schedule
+      operationId: listSchedule
+      summary: List showtimes
+      description: |
+        Returns every showtime entry currently in the JSON data store. The result
+        is a JSON array; an empty store returns an empty array. Stored records are
+        returned as-is.
+      responses:
+        "200":
+          description: Showtimes returned successfully.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/StoredSchedule"
+              examples:
+                default:
+                  value:
+                    - date: "20151130"
+                      movies:
+                        - "720d006c-3a57-4b6a-b18f-9b713b073f3c"
+                        - "a8034f44-aee4-44cf-b32c-74cf452aaaae"
+                        - "39ab85e5-5e8e-4dc5-afea-65dc368bd7ab"
+                    - date: "20151201"
+                      movies:
+                        - "267eedb8-0f5d-42d5-8f43-72426b9fb3e6"
+                        - "7daf7208-be4d-4944-a3ae-c1c2f516f3e6"
+        "405":
+          $ref: "#/components/responses/MethodNotAllowed"
+        "500":
+          $ref: "#/components/responses/UnexpectedServerError"
+    post:
+      tags:
+        - Schedule
+      operationId: createSchedule
+      summary: Create a showtime
+      description: |
+        Validates the complete showtime payload, appends the entry to the store,
+        and returns the created representation. The `date` acts as the unique
+        identifier and must be an eight digit string (`YYYYMMDD`). Creating an
+        entry whose `date` already exists returns `409`. Unknown properties are
+        rejected.
+      requestBody:
+        required: true
+        description: Showtime fields to create. `date` is the unique identifier.
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ScheduleInput"
+      responses:
+        "201":
+          description: Showtime created.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Schedule"
+              examples:
+                default:
+                  value:
+                    date: "20151206"
+                    movies:
+                      - "720d006c-3a57-4b6a-b18f-9b713b073f3c"
+                      - "a8034f44-aee4-44cf-b32c-74cf452aaaae"
+        "400":
+          $ref: "#/components/responses/InvalidJson"
+        "405":
+          $ref: "#/components/responses/MethodNotAllowed"
+        "409":
+          $ref: "#/components/responses/DateConflict"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "422":
+          $ref: "#/components/responses/InvalidSchedule"
+        "500":
+          $ref: "#/components/responses/UnexpectedServerError"
+  /schedule/{date}:
+    parameters:
+      - $ref: "#/components/parameters/Date"
+    get:
+      tags:
+        - Schedule
+      operationId: getSchedule
+      summary: Get a showtime by date
+      description: |
+        Returns the stored showtime whose `date` exactly matches `date`. The date
+        is treated as a string. The stored record is returned as-is.
+      responses:
+        "200":
+          description: Showtime found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StoredSchedule"
+              examples:
+                default:
+                  value:
+                    date: "20151130"
+                    movies:
+                      - "720d006c-3a57-4b6a-b18f-9b713b073f3c"
+                      - "a8034f44-aee4-44cf-b32c-74cf452aaaae"
+                      - "39ab85e5-5e8e-4dc5-afea-65dc368bd7ab"
+        "404":
+          $ref: "#/components/responses/DateNotFound"
+        "405":
+          $ref: "#/components/responses/MethodNotAllowed"
+        "500":
+          $ref: "#/components/responses/UnexpectedServerError"
+    delete:
+      tags:
+        - Schedule
+      operationId: deleteSchedule
+      summary: Delete a showtime
+      description: |
+        Removes the showtime with the matching date from the store. A successful
+        deletion has no response body.
+      responses:
+        "204":
+          description: Showtime deleted; response body is empty.
+        "404":
+          $ref: "#/components/responses/DateNotFound"
+        "405":
+          $ref: "#/components/responses/MethodNotAllowed"
+        "500":
+          $ref: "#/components/responses/UnexpectedServerError"
+  /schedule/{date}/movies:
+    parameters:
+      - $ref: "#/components/parameters/Date"
+    get:
+      tags:
+        - Schedule
+      operationId: listScheduleMovies
+      summary: List the movies playing on a date
+      description: |
+        Returns only the array of movie IDs available on the matching date. This
+        is a convenient sub-resource of a showtime entry.
+      responses:
+        "200":
+          description: Movie list returned successfully.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: string
+              examples:
+                default:
+                  value:
+                    - "720d006c-3a57-4b6a-b18f-9b713b073f3c"
+                    - "a8034f44-aee4-44cf-b32c-74cf452aaaae"
+                    - "39ab85e5-5e8e-4dc5-afea-65dc368bd7ab"
+        "404":
+          $ref: "#/components/responses/DateNotFound"
+        "405":
+          $ref: "#/components/responses/MethodNotAllowed"
+        "500":
+          $ref: "#/components/responses/UnexpectedServerError"
+components:
+  parameters:
+    Date:
+      name: date
+      in: path
+      required: true
+      description: Exact show date string in `YYYYMMDD` format.
+      schema:
+        type: string
+        pattern: "^\\d{8}$"
+        example: "20151130"
+  schemas:
+    ScheduleInput:
+      type: object
+      description: |
+        Strict request body accepted by create. Both properties are required.
+        Values must have the declared JSON types; additional properties are
+        rejected.
+      additionalProperties: false
+      required:
+        - date
+        - movies
+      properties:
+        date:
+          type: string
+          pattern: "^\\d{8}$"
+          description: Show date as an eight digit string in `YYYYMMDD` format.
+          example: "20151206"
+        movies:
+          type: array
+          description: IDs of the movies available on that date.
+          items:
+            type: string
+          example:
+            - "720d006c-3a57-4b6a-b18f-9b713b073f3c"
+            - "a8034f44-aee4-44cf-b32c-74cf452aaaae"
+    Schedule:
+      type: object
+      description: Showtime representation returned after create.
+      required:
+        - date
+        - movies
+      properties:
+        date:
+          type: string
+          example: "20151206"
+        movies:
+          type: array
+          items:
+            type: string
+          example:
+            - "720d006c-3a57-4b6a-b18f-9b713b073f3c"
+            - "a8034f44-aee4-44cf-b32c-74cf452aaaae"
+    StoredSchedule:
+      type: object
+      description: |
+        Showtime record returned by list and get-by-date. The service returns
+        stored values as-is.
+      required:
+        - date
+        - movies
+      additionalProperties: true
+      properties:
+        date:
+          type: string
+          example: "20151130"
+        movies:
+          type: array
+          items:
+            type: string
+          example:
+            - "720d006c-3a57-4b6a-b18f-9b713b073f3c"
+            - "a8034f44-aee4-44cf-b32c-74cf452aaaae"
+    Error:
+      type: object
+      required:
+        - error
+      properties:
+        error:
+          description: |
+            Human-readable HTTP error or Pydantic validation details. Either a
+            string (HTTP errors) or an array of ValidationIssue objects
+            (validation errors).
+          oneOf:
+            - type: string
+            - type: array
+              items:
+                $ref: "#/components/schemas/ValidationIssue"
+          example: Date does not exist
+    ValidationIssue:
+      type: object
+      required:
+        - type
+        - loc
+        - msg
+        - input
+      additionalProperties: true
+      properties:
+        type:
+          type: string
+          description: Pydantic validation error type.
+          example: missing
+        loc:
+          type: array
+          description: >-
+            Location of the invalid or missing value in the request. Items are
+            strings or integers.
+          items:
+            oneOf:
+              - type: string
+              - type: integer
+          example:
+            - date
+        msg:
+          type: string
+          description: Explanation of the validation failure.
+          example: Field required
+        input:
+          description: Rejected value, when one was supplied.
+        ctx:
+          type: object
+          description: Optional additional context from Pydantic.
+          additionalProperties: true
+  responses:
+    DateNotFound:
+      description: No showtime has the supplied date. The service returns HTTP 404.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          examples:
+            default:
+              value:
+                error: Date does not exist
+    DateConflict:
+      description: A showtime with the supplied date already exists. The service returns HTTP 409.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          examples:
+            default:
+              value:
+                error: Date already exists
+    InvalidJson:
+      description: Request body is empty or is not valid JSON.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          examples:
+            default:
+              value:
+                error: The browser (or proxy) sent a request that this server could not understand.
+    UnsupportedMediaType:
+      description: Request body is not sent with the application/json media type.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          examples:
+            default:
+              value:
+                error: The browser (or proxy) sent a request that this server could not understand.
+    InvalidSchedule:
+      description: |
+        JSON decoded successfully, but the payload did not satisfy ScheduleInput.
+        The error array contains Pydantic validation details. Common causes
+        include missing fields, wrong types, extra fields, or a date that is not
+        an eight digit string.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          examples:
+            default:
+              value:
+                error:
+                  - type: string_pattern_mismatch
+                    loc:
+                      - date
+                    msg: String should match pattern '^\d{8}$'
+                    input: "2015-12-06"
+    MethodNotAllowed:
+      description: The HTTP method is not supported for this path.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          examples:
+            default:
+              value:
+                error: The method is not allowed for the requested URL.
+    UnexpectedServerError:
+      description: |
+        Unexpected server-side failure, for example an error reading or
+        writing the JSON data file. Unhandled exceptions are processed by
+        Flask; their response representation may not follow the Error schema.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+
+
+
