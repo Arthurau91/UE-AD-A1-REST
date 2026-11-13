@@ -3,5 +3,11 @@ services:
     build: ./movie/
     ports:
       - "3200:3200"
+  schedule:
+    build:
+      context: .
+      dockerfile: schedule/Dockerfile
+    ports:
+      - "3202:3202"
   # to continue
 
